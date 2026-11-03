@@ -1,10 +1,11 @@
 import asyncio
-import hashlib
 import logging
 import os
 import time
+
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
+
 from config import load_settings
 from db import Database
 from mydgn_api import MyDGNClient, MyDGNError
@@ -143,7 +144,7 @@ async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_message.reply_text("\n".join(lines))
 
 
-def main():
+async def run_bot():
     app = Application.builder().token(settings.telegram_token).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_cmd))
@@ -154,12 +155,34 @@ def main():
     app.add_handler(CommandHandler("summary", summary))
 
     port = int(os.environ.get("PORT", "10000"))
-    webhook_url = f"{settings.render_external_url}/telegram"
-    log.info("Starting Telegram webhook server on port %s", port)
-    app.run_webhook(
-        listen="0.0.0.0", port=port, url_path="telegram", webhook_url=webhook_url,
-        secret_token=settings.webhook_secret, drop_pending_updates=False,
-    )
+    url_path = "telegram"
+    webhook_url = f"{settings.render_external_url}/{url_path}"
+
+    # Explicit lifecycle: initialize the bot before accessing bot.id or starting
+    # the update fetcher. This avoids ExtBot-not-initialized errors.
+    await app.initialize()
+    try:
+        await app.start()
+        await app.updater.start_webhook(
+            listen="0.0.0.0",
+            port=port,
+            url_path=url_path,
+            secret_token=settings.webhook_secret,
+            webhook_url=webhook_url,
+            drop_pending_updates=False,
+        )
+        log.info("Webhook server started on port %s", port)
+        await asyncio.Event().wait()
+    finally:
+        if app.updater and app.updater.running:
+            await app.updater.stop()
+        if app.running:
+            await app.stop()
+        await app.shutdown()
+
+
+def main():
+    asyncio.run(run_bot())
 
 
 if __name__ == "__main__":
