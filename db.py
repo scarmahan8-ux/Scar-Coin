@@ -1,6 +1,8 @@
+import json
 import sqlite3
 from pathlib import Path
 from datetime import datetime, timezone
+
 
 class Database:
     def __init__(self, path: str):
@@ -23,6 +25,13 @@ class Database:
                 state TEXT NOT NULL DEFAULT 'open',
                 created_at TEXT NOT NULL
             )''')
+            con.execute('''CREATE TABLE IF NOT EXISTS mydgn_orders (
+                transaction_id INTEGER PRIMARY KEY,
+                player_name TEXT NOT NULL,
+                coin_amount INTEGER,
+                payload TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )''')
 
     def add_note(self, platform: str, title: str, details: str = "") -> int:
         with self.connect() as con:
@@ -34,13 +43,26 @@ class Database:
 
     def list_notes(self, limit: int = 10):
         with self.connect() as con:
-            return con.execute(
-                "SELECT * FROM notes ORDER BY id DESC LIMIT ?", (limit,)
-            ).fetchall()
+            return con.execute("SELECT * FROM notes ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
 
     def summary(self):
         with self.connect() as con:
-            rows = con.execute(
-                "SELECT platform,state,COUNT(*) AS n FROM notes GROUP BY platform,state"
-            ).fetchall()
+            rows = con.execute("SELECT platform,state,COUNT(*) AS n FROM notes GROUP BY platform,state").fetchall()
             return [dict(r) for r in rows]
+
+    def save_order(self, transaction_id: int, payload: dict) -> bool:
+        with self.connect() as con:
+            cur = con.execute(
+                "INSERT OR IGNORE INTO mydgn_orders(transaction_id,player_name,coin_amount,payload,created_at) VALUES(?,?,?,?,?)",
+                (transaction_id, str(payload.get("playerName", "Unknown")), int(payload.get("coinAmount", 0) or 0),
+                 json.dumps(payload, ensure_ascii=False), datetime.now(timezone.utc).isoformat())
+            )
+            return cur.rowcount == 1
+
+    def list_orders(self, limit: int = 10):
+        with self.connect() as con:
+            return con.execute("SELECT * FROM mydgn_orders ORDER BY transaction_id DESC LIMIT ?", (limit,)).fetchall()
+
+    def order_count(self) -> int:
+        with self.connect() as con:
+            return int(con.execute("SELECT COUNT(*) FROM mydgn_orders").fetchone()[0])
