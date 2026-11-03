@@ -1,8 +1,8 @@
 import logging
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
-from .config import load_settings
-from .db import Database
+from config import load_settings
+from db import Database
 
 logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
